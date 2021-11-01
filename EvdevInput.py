@@ -36,6 +36,16 @@ class NonExistingInput(DeviceError):
         super().__init__(message)
 
 
+class ActionError(DeviceError):
+    def __init__(self, message='Nothing mapped to this key!'):
+        super().__init__(message)
+
+
+class PlaceholderException(Exception):
+    def __init__(self, message='Something went terribly wrong if you are seeing this message!'):
+        super().__init__(message)
+
+
 class EvdevInput:
     pass
 
@@ -88,7 +98,7 @@ class Button(EvdevInput):
             something_executed = True
 
         if not something_executed:
-            raise IndexError("Nie przypisano akcji!")
+            raise ActionError()
 
 
 class Joystick(EvdevInput):
@@ -121,7 +131,7 @@ class Joystick(EvdevInput):
 
     def execute_action_ang_str(self):
         if self.mapping_to_execute is None:
-            raise IndexError("Nie przypisano akcji!")  # TODO - poprawić na errora który ma więcej sensu
+            raise ActionError()
 
         while abs(self.last_pos_xy[0]) > self.thresholds or abs(self.last_pos_xy[1]) > self.thresholds:
             # TODO - Zrobić whilea tak jakby tablicowo
@@ -133,7 +143,7 @@ class Joystick(EvdevInput):
 
     def execute_action_x_y(self):
         if self.mapping_to_execute is None:
-            raise IndexError("Nie przypisano akcji!")  # TODO - poprawić na errora który ma więcej sensu
+            raise ActionError()
 
         while abs(self.last_pos_xy[0]) > self.thresholds or abs(self.last_pos_xy[1]) > self.thresholds:
             # TODO - Zrobić whilea tak jakby tablicowo
@@ -157,10 +167,13 @@ class EvdevDevice(ABC):
 
         self.mappingObject = None
 
+        self.connected = False
+
     def connect(self, wait_time=1, repeats=5):
         for path in list_devices():
             print(InputDevice(path).name)
             if InputDevice(path).name == self.name:
+                self.connected = True
                 print("connected")
                 self.device = InputDevice(path)
                 break
@@ -196,18 +209,18 @@ class EvdevDevice(ABC):
         return None
 
     def map_key(self, keyInput, actionName, keyState=1):
-        if actionName in self.mappingObject.actionMappings.keys():
+        if actionName in self.mappingObject.standard_mappings.keys():
             for i in self.buttons_list:
-                #print(i.frontend_name)
+                # print(i.frontend_name)
                 if i.frontend_name == keyInput:
-                    #print("   the one")
+                    # print("   the one")
                     if keyState == 1:
-                        i.mapping_to_execute_on_press = self.mappingObject.actionMappings[actionName]
-                        #print("event", actionName, "maped")
+                        i.mapping_to_execute_on_press = self.mappingObject.standard_mappings[actionName]
+                        # print("event", actionName, "maped")
                     elif keyState == 2:
-                        i.mapping_to_while_pressed = self.mappingObject.actionMappings[actionName]
+                        i.mapping_to_while_pressed = self.mappingObject.standard_mappings[actionName]
                     elif keyState == 0:
-                        i.mapping_to_execute_on_release = self.mappingObject.actionMappings[actionName]
+                        i.mapping_to_execute_on_release = self.mappingObject.standard_mappings[actionName]
                     break
             else:
                 raise NonExistingInput()
@@ -222,16 +235,33 @@ class EvdevDevice(ABC):
         :param axisName: name of axis in mapping object
         :return: None
         """
-        if axisName in self.mappingObject.axisMappings.keys():
+        if axisName in self.mappingObject.standard_mappings.keys():
             for i in self.joysticks_list:
                 if i.joystick_name == joystick_input:
-                    i.mapping_to_execute = self.mappingObject.axisMappings[axisName]
+                    i.mapping_to_execute = self.mappingObject.standard_mappings[axisName]
                     i.execute_action = action_type
                     break
             else:
                 raise NonExistingInput()
         else:
             raise IndexError(f"First map the axis named {axisName}!")
+
+    def listen_loop(self, stop_name, stop_state, target):
+
+        for event in self.device.read_loop():
+            categorised_event = categorize(event)
+
+            # ABS events are are "floating" events - triggers, joysticks etc.
+            if isinstance(categorised_event, AbsEvent):
+                # self.to_exec, self.args_for_exec = self.pad.update_states(categorised_event)
+                target.executing_joystick = self.update_states(categorised_event)
+
+            # key events are regular button events
+            elif isinstance(categorised_event, KeyEvent):
+                target.executing_button = self.update_states(categorised_event)
+
+                if categorised_event.keycode == stop_name and categorised_event.keystate == stop_state:
+                    break
 
 
 class X5Pad(EvdevDevice):
@@ -267,11 +297,11 @@ class X5Pad(EvdevDevice):
         self.buttons_list = [self.y_button, self.x_button, self.a_button, self.b_button, self.select_button,
                              self.start_button, self.left_button, self.right_button, self.left_j_button,
                              self.right_j_button]
-        
-        #print()
-        #for i in self.buttons_list:
+
+        # print()
+        # for i in self.buttons_list:
         #    print(i.frontend_name)
-        #print()        
+        # print()
 
         self.capabilities = [AbsEvent, KeyEvent]
 
@@ -332,7 +362,7 @@ class x360Pad(EvdevDevice):
 
 
 class EvdevDeviceInput:
-    def __init__(self, mappingObject: MappingClass):
+    def __init__(self):
         self.keyActionBindings = {}
 
         self.to_exec: Optional[MappingClass] = None
@@ -341,25 +371,14 @@ class EvdevDeviceInput:
 
         self.stopKeyName = "BTN_SELECT"  # TODO ogarnąć żeby to modyfikowalne było
 
+        # priority -> device
         self.devices: Dict[int, Type[EvdevDevice]] = {}
 
-        # self.device = InputDevice('/dev/input/event3')
-        self.pad = X5Pad(mappingObject)
+        self.on_ActionError: Optional[Callable] = None
 
-        for i in range(10):
-            try:
-                self.pad.connect()
-            except DeviceNotPlugged:
-                time.sleep(1)
-                continue
-            else:
-                print("device found")
-                break
-        else:
-            print("couldn't find device!")
-            raise DeviceNotPlugged()
+        self.additional_exception = PlaceholderException
 
-    def add_device(self, device: Type[EvdevDevice], priority: int, overwrite=False):
+    def add_device(self, device: EvdevDevice, priority: int, overwrite=False):
         """
         Add new device for it's input to be listened to
         :param device: Instance of a child of EvdevDevice, device to be added
@@ -375,7 +394,7 @@ class EvdevDeviceInput:
     def connect_devices(self):
         """
         Try to connect to all added devices, in ascending priority
-        :return:
+        :return: None
         """
         connected = False
         for p, d in sorted(self.devices.items()):
@@ -395,71 +414,98 @@ class EvdevDeviceInput:
         if not connected:
             raise DeviceNotPlugged()
 
-    def pad_input(self, stop_name, stop_state):
+    def get_primary_device(self, only_connected=True):
+        if not only_connected:
+            return sorted(self.devices.items())[0][1]
 
-        for event in self.pad.device.read_loop():
-            categorised_event = categorize(event)
+        for p, d in sorted(self.devices.items()):
+            if d.connected:
+                return d
 
-            # ABS eventy to eventy "płynne" - joysticki, triggery itp
-            if isinstance(categorised_event, AbsEvent):
-                # self.to_exec, self.args_for_exec = self.pad.update_states(categorised_event)
-                self.executing_joystick = self.pad.update_states(categorised_event)
+        return None  # TODO - change to raise
 
-            # key to zwyyczajne przyciski
-            elif isinstance(categorised_event, KeyEvent):
-                self.executing_button = self.pad.update_states(categorised_event)
-
-                if categorised_event.keycode == stop_name and categorised_event.keystate == stop_state:
-                    break
-
-        if 'exit' in self.keyActionBindings.keys():
-            self.to_exec = self.keyActionBindings['exit'][0]
-
-    def listenPadInput(self):
-        padInputThread = threading.Thread(target=self.pad_input, args=(self.stopKeyName, 0))
+    def listen_and_execute_one_dev(self, device=None):
+        if device is None:
+            device = self.get_primary_device()
+        padInputThread = threading.Thread(target=device.listen_loop, args=(self.stopKeyName, 0, self))
         padInputThread.start()
 
         while padInputThread.is_alive():
-            if self.executing_joystick is not None:
-                try:
-                    self.executing_joystick.execute_action_ang_str()
-                except IndexError:
-                    pass
-                self.executing_joystick = None
-            elif self.executing_button is not None:
-                try:
-                    self.executing_button.execute_action()
-                except IndexError:
-                    pass
-                self.executing_button = None
+            for executing_input in [self.executing_joystick, self.executing_button]:
+                if executing_input is not None:
+                    try:
+                        executing_input.execute_action()
+                    except ActionError as ae:
+                        if self.on_ActionError is None:
+                            pass
+                        else:
+                            self.on_ActionError(ae)
+                    except self.additional_exception:
+                        pass
 
-            elif self.to_exec is not None:
-                print("felt button")
-                self.to_exec.executeAction()
-                self.to_exec = None
+            self.executing_joystick = None
+            self.executing_button = None
+
+    def listen_and_execute_all(self):
+        pass
+        # TODO - ogarnąć to
+
+    def set_ActionError_feedback(self, rapport_function: Callable[[Exception], None]):
+        """
+        Set function that will rapport when button that is not mapped was pressed
+        :param rapport_function: function that gives user feedback about error (for example log or print of sorts)
+        """
+        self.on_ActionError = rapport_function
+
+    def set_additional_exception(self, exception: Type[Exception]):
+        """
+        During mapped function execution some additional exceptions might occur. If they derive from one class, you may
+        set up this parameter to catch them inside this loop.
+        :param exception: derivative of Exception, to be caught in the loop
+        """
+        self.additional_exception = exception
 
 
 if __name__ == '__main__':
     from time import sleep
-    
+
+
     def x_sleep():
         print("sleep_start")
         sleep(15)
         print("sleep_stop")
-    
+
+
+    class TestE(Exception):
+        def __init__(self, message='TestException'):
+            super().__init__(message)
+
+    def y_exception():
+        raise TestE()
+
+
     mp = MappingClass()
-    pi = EvdevDeviceInput(mp)
 
-    mp.mapAction("test", x_sleep)
-    mp.mapAxis("movement", lambda x, y: print(int(x), int(y * 100)))
-    mp.mapAction("up", x_sleep)
-    mp.mapAction("down", lambda: print("test a"))
-    mp.mapAction("exit", lambda: print("exit"))
+    pad = X5Pad(mp)
 
-    pi.pad.map_joystick("LEFT_J", "movement", action_type=Joystick.execute_action_ang_str)
-    pi.pad.map_key("BTN_Y", "up")
-    pi.pad.map_key("BTN_A", "down")
-    pi.pad.map_key("BTN_X", "test")
-    pi.pad.map_key("BTN_SELECT", "exit")
+    pi = EvdevDeviceInput()
 
-    pi.listenPadInput()
+    mp.map_standard_action("test", x_sleep)
+    mp.map_standard_action("movement", lambda x, y: print(int(x), int(y * 100)))
+    mp.map_standard_action("up", y_exception)
+    mp.map_standard_action("down", lambda: print("test a"))
+    mp.map_standard_action("exit", lambda: print("exit"))
+
+    pad.map_joystick("LEFT_J", "movement", action_type=Joystick.execute_action_ang_str)
+    pad.map_key("BTN_Y", "up")
+    pad.map_key("BTN_A", "down")
+    pad.map_key("BTN_X", "test")
+    pad.map_key("BTN_SELECT", "exit")
+
+    pi.set_ActionError_feedback(lambda x: print(x))
+    pi.set_additional_exception(TestE)
+
+    pi.add_device(pad, 1)
+    pi.connect_devices()
+
+    pi.listen_and_execute_one_dev()

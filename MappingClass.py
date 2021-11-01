@@ -35,34 +35,13 @@ class MappingClass:
     """
 
     def __init__(self):
-        self.actionMappings = {}
-        self.axisMappings = {}
+        self.standard_mappings = {}
 
-    def mapAction(self, name, function):
+    def map_standard_action(self, name, function):
         """
-        Map Action, name to relevant function
-        :param name: name of an action (string)
+        Map action name to relevant function
+        :param name: name of an action. Function will be later referenced by this name (string)
         :param function: function that is called when action is executed (callable)
         :return: None
         """
-        self.actionMappings[name] = Mapping(name, function)
-
-    def mapAxis(self, name, function):
-        """
-        Map Axis, name to relevant function
-        :param name: name of an axis (string)
-        :param function: function that is called when axion is executed (callable with preferably two parameters, first
-        angle, second movement strength/speed. Should work with different amount and type of params, but Input classes are
-        written for this kind of setup)
-        :return: None
-        """
-        self.axisMappings[name] = Mapping(name, function)
-
-    # def executeAction(self, name, *argv):
-    #     """
-    #     executes action with given name
-    #     :param name: name of action to execute
-    #     :param argv: params to pass to action (preferably angle and speed)
-    #     :return:
-    #     """
-    #     self.actionMappings[name].executeAction(*argv)
+        self.standard_mappings[name] = Mapping(name, function)
