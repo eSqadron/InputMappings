@@ -227,9 +227,9 @@ class EvdevDevice(ABC):
         else:
             raise IndexError(f"First map the action named {actionName}!")
 
-    def map_joystick(self, joystick_input: str, axisName: str, action_type: Callable):
+    def map_joystick(self, joystick_input: str, axisName: str, action_type: str):
         """
-        :param action_type: Joystick.execute_action_ang_str or Joystick.execute_action_x_y, depending whether you want
+        :param action_type: "ang_str" or "x_y", depending whether you want
                             arguments to be passed as angle and strength or x and y
         :param joystick_input: name of joystick on pad TODO - functions showing names and pads and functions allowing addition of other pads
         :param axisName: name of axis in mapping object
@@ -239,7 +239,12 @@ class EvdevDevice(ABC):
             for i in self.joysticks_list:
                 if i.joystick_name == joystick_input:
                     i.mapping_to_execute = self.mappingObject.standard_mappings[axisName]
-                    i.execute_action = action_type
+                    if action_type == "x_y":
+                        i.execute_action = i.execute_action_x_y
+                    elif action_type == "str_ang":
+                        i.execute_action = i.execute_action_str_ang
+                    else:
+                        raise ValueError("This type of params do not exist!")
                     break
             else:
                 raise NonExistingInput()
@@ -496,7 +501,7 @@ if __name__ == '__main__':
     mp.map_standard_action("down", lambda: print("test a"))
     mp.map_standard_action("exit", lambda: print("exit"))
 
-    pad.map_joystick("LEFT_J", "movement", action_type=Joystick.execute_action_ang_str)
+    pad.map_joystick("LEFT_J", "movement", action_type="ang_str")
     pad.map_key("BTN_Y", "up")
     pad.map_key("BTN_A", "down")
     pad.map_key("BTN_X", "test")
