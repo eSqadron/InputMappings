@@ -241,8 +241,8 @@ class EvdevDevice(ABC):
                     i.mapping_to_execute = self.mappingObject.standard_mappings[axisName]
                     if action_type == "x_y":
                         i.execute_action = i.execute_action_x_y
-                    elif action_type == "str_ang":
-                        i.execute_action = i.execute_action_str_ang
+                    elif action_type == "ang_str":
+                        i.execute_action = i.execute_action_ang_str
                     else:
                         raise ValueError("This type of params do not exist!")
                     break
