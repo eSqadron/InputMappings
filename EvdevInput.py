@@ -1,3 +1,4 @@
+import json
 from abc import ABC
 from typing import Tuple, Optional, Callable, Type, Dict, Union
 
@@ -377,7 +378,7 @@ class EvdevDeviceInput:
         self.stopKeyName = "BTN_SELECT"  # TODO ogarnąć żeby to modyfikowalne było
 
         # priority -> device
-        self.devices: Dict[int, Type[EvdevDevice]] = {}
+        self.devices: Dict[int, EvdevDevice] = {}
 
         self.on_ActionError: Optional[Callable] = None
 
@@ -469,6 +470,40 @@ class EvdevDeviceInput:
         :param exception: derivative of Exception, to be caught in the loop
         """
         self.additional_exception = exception
+
+    def load_from_json(self, file_path, mapping_object):
+        f = open(file_path)
+        data = json.load(f)
+
+        try:
+            gp = data["gamepads"]
+        except KeyError:
+            pass
+        else:
+            for gp_name, gp_values in gp.items():
+                new_device = eval(gp_name)(mapping_object)
+                try:
+                    gp_keys = gp_values["keys"]
+                except KeyError:
+                    pass
+                else:
+                    for key_name, map_name in gp_keys.items():
+                        new_device.map_key(key_name, map_name)
+
+                try:
+                    gp_j = gp_values["joysticks"]
+                except KeyError:
+                    pass
+                else:
+                    for j_name, map_name_v in gp_j.items():
+                        new_device.map_joystick(j_name, map_name_v[0], action_type=map_name_v[1])
+
+                self.add_device(new_device, gp_values['priority'])
+
+
+
+
+
 
 
 if __name__ == '__main__':
