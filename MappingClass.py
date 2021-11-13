@@ -1,3 +1,4 @@
+import json
 from typing import Callable
 
 
@@ -45,3 +46,20 @@ class MappingClass:
         :return: None
         """
         self.standard_mappings[name] = Mapping(name, function)
+
+    def load_from_json(self, file_path: str) -> None:
+        """
+        Load all mappings from json file
+        file structure:
+        {
+          "standard action mappings":
+          {
+            "action name": "related function",
+            "action name2": "related function2"
+          }
+        }
+        """
+        f = open(file_path)
+        data = json.load(f)
+        for i, j in data['standard action mappings'].items():
+            self.map_standard_action(i, eval(j))
