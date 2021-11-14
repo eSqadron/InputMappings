@@ -1,5 +1,5 @@
 import json
-from typing import Callable
+from typing import Callable, Optional, Dict
 
 
 def basicActionFunction(name):
@@ -47,7 +47,7 @@ class MappingClass:
         """
         self.standard_mappings[name] = Mapping(name, function)
 
-    def load_from_json(self, file_path: str) -> None:
+    def load_from_json(self, file_path: str, names_ref: Optional[Dict] = None) -> None:
         """
         Load all mappings from json file
         file structure:
@@ -58,8 +58,15 @@ class MappingClass:
             "action name2": "related function2"
           }
         }
+        :param file_path: path to file to be loaded
+        :param names_ref: name references, for example {"self":self}, if all functions are defined
+        in the same class as this function is called from. Or {"Cls1":cls1_instance, "Cls2":cls2_instance}
+        if functions are spread among various instances of various classes.
         """
         f = open(file_path)
         data = json.load(f)
         for i, j in data['standard action mappings'].items():
-            self.map_standard_action(i, eval(j))
+            if names_ref is not None:
+                self.map_standard_action(i, eval(j, names_ref))
+            else:
+                self.map_standard_action(i, eval(j))

@@ -42,6 +42,11 @@ class ActionError(DeviceError):
         super().__init__(message)
 
 
+class NoDevicesAdded(DeviceError):
+    def __init__(self, message='There are no added devices with given conditions'):
+        super().__init__(message)
+
+
 class PlaceholderException(Exception):
     def __init__(self, message='Something went terribly wrong if you are seeing this message!'):
         super().__init__(message)
@@ -130,7 +135,10 @@ class Joystick(EvdevInput):
         else:
             return None
 
-    def execute_action_ang_str(self):
+    def execute_action_ang_str(self) -> None:
+        """
+        Execute action from mapped mapping, with anf and strength as passed params
+        """
         if self.mapping_to_execute is None:
             raise ActionError()
 
@@ -170,7 +178,11 @@ class EvdevDevice(ABC):
 
         self.connected = False
 
-    def connect(self, wait_time=1, repeats=5):
+    def connect(self) -> None:
+        """
+        Connect device;
+        :raise DeviceNotPlugged: raised, when device is not plugged in.
+        """
         for path in list_devices():
             print(InputDevice(path).name)
             if InputDevice(path).name == self.name:
@@ -181,7 +193,11 @@ class EvdevDevice(ABC):
         else:
             raise DeviceNotPlugged()
 
-    def update_joysticks_states(self, input_event):
+    def update_joysticks_states(self, input_event: KeyEvent) -> None:
+        """
+        update states of all joysticks on device (current tilt, angle etc.)
+        :param input_event - input event that is being red in order to update proper input state.
+        """
         input_event_str = str(input_event)
         pos = input_event_str.find("ABS")
         if pos == -1:
@@ -193,7 +209,11 @@ class EvdevDevice(ABC):
             if moved_joystick is not None:
                 return moved_joystick
 
-    def update_keys_states(self, input_event):
+    def update_keys_states(self, input_event: AbsEvent) -> None:
+        """
+        update states of all buttons on device (whether they are pressed, released etc.)
+        :param input_event - input event that is being red in order to update proper input state.
+        """
         ev_name = input_event.keycode
         ev_state = input_event.keystate
         for i in self.buttons_list:
@@ -201,7 +221,11 @@ class EvdevDevice(ABC):
             if clicked_button is not None:
                 return clicked_button
 
-    def update_states(self, input_event):
+    def update_states(self, input_event: InputEvent) -> None:
+        """
+        update states of buttons, joysticks, etc (whether they are pressed, tilted, released etc.)
+        :param input_event - input event that is being red in order to update proper input state.
+        """
         for input_type, proper_update_function in self.instance_check_dict.items():
             if isinstance(input_event, input_type):
                 if input_type in self.capabilities:
@@ -209,7 +233,15 @@ class EvdevDevice(ABC):
 
         return None
 
-    def map_key(self, keyInput, actionName, keyState=1):
+    def map_key(self, keyInput: str, actionName: str, keyState: int = 1) -> None:
+        """
+        Map standard action from mapping class to button
+        :param keyInput: name of button on pad
+        :param actionName: name of standard action event in relative mapping object
+        :param keyState: whether event should be executed on press (1), constantly while button is pressed (2)
+                        or on release (0)
+        :return: None
+        """
         if actionName in self.mappingObject.standard_mappings.keys():
             for i in self.buttons_list:
                 # print(i.frontend_name)
@@ -228,12 +260,13 @@ class EvdevDevice(ABC):
         else:
             raise IndexError(f"First map the action named {actionName}!")
 
-    def map_joystick(self, joystick_input: str, axisName: str, action_type: str):
+    def map_joystick(self, joystick_input: str, axisName: str, action_type: str) -> None:
         """
+        Map standard action from mapping class to joystick
+        :param joystick_input: name of joystick on pad
+        :param axisName: name of standard action event in relative mapping object
         :param action_type: "ang_str" or "x_y", depending whether you want
                             arguments to be passed as angle and strength or x and y
-        :param joystick_input: name of joystick on pad TODO - functions showing names and pads and functions allowing addition of other pads
-        :param axisName: name of axis in mapping object
         :return: None
         """
         if axisName in self.mappingObject.standard_mappings.keys():
@@ -252,7 +285,15 @@ class EvdevDevice(ABC):
         else:
             raise IndexError(f"First map the axis named {axisName}!")
 
-    def listen_loop(self, stop_name, stop_state, target):
+    def listen_loop(self, stop_name: str, stop_state: int, target) -> None:
+        """
+        Create infinite loop to listen to this device input, and set executing_button and executing_joystick variables
+        of a target
+        :param stop_name
+        :param stop_state
+        :param target: instance of EvdevDeviceInput, that have variables executing_button and executing_joystick, that
+        are being set while loop is on.
+        """
 
         for event in self.device.read_loop():
             categorised_event = categorize(event)
@@ -384,7 +425,7 @@ class EvdevDeviceInput:
 
         self.additional_exception = PlaceholderException
 
-    def add_device(self, device: EvdevDevice, priority: int, overwrite=False):
+    def add_device(self, device: EvdevDevice, priority: int, overwrite=False) -> None:
         """
         Add new device for it's input to be listened to
         :param device: Instance of a child of EvdevDevice, device to be added
@@ -397,7 +438,7 @@ class EvdevDeviceInput:
 
         self.devices[priority] = device
 
-    def connect_devices(self):
+    def connect_devices(self) -> None:
         """
         Try to connect to all added devices, in ascending priority
         :return: None
@@ -420,7 +461,11 @@ class EvdevDeviceInput:
         if not connected:
             raise DeviceNotPlugged()
 
-    def get_primary_device(self, only_connected=True):
+    def get_primary_device(self, only_connected: bool = True) -> EvdevDevice:
+        """
+        Get current primary device (with highest priority (lowest number))
+        :param only_connected: search only connected devices (bool)
+        """
         if not only_connected:
             return sorted(self.devices.items())[0][1]
 
@@ -428,9 +473,9 @@ class EvdevDeviceInput:
             if d.connected:
                 return d
 
-        return None  # TODO - change to raise
+        raise NoDevicesAdded()
 
-    def listen_and_execute_one_dev(self, device=None):
+    def listen_and_execute_one_dev(self, device: Optional[EvdevDevice] = None) -> None:
         if device is None:
             device = self.get_primary_device()
         padInputThread = threading.Thread(target=device.listen_loop, args=(self.stopKeyName, 0, self))
@@ -446,24 +491,27 @@ class EvdevDeviceInput:
                             pass
                         else:
                             self.on_ActionError(ae)
-                    except self.additional_exception:
-                        pass
+                    except self.additional_exception as ae:
+                        if self.on_ActionError is None:
+                            pass
+                        else:
+                            self.on_ActionError(ae)
 
             self.executing_joystick = None
             self.executing_button = None
 
-    def listen_and_execute_all(self):
+    def listen_and_execute_all(self) -> None:
         pass
         # TODO - ogarnąć to
 
-    def set_ActionError_feedback(self, rapport_function: Callable[[Exception], None]):
+    def set_ActionError_feedback(self, rapport_function: Callable[[Exception], None]) -> None:
         """
         Set function that will rapport when button that is not mapped was pressed
         :param rapport_function: function that gives user feedback about error (for example log or print of sorts)
         """
         self.on_ActionError = rapport_function
 
-    def set_additional_exception(self, exception: Type[Exception]):
+    def set_additional_exception(self, exception: Type[Exception]) -> None:
         """
         During mapped function execution some additional exceptions might occur. If they derive from one class, you may
         set up this parameter to catch them inside this loop.
@@ -471,7 +519,31 @@ class EvdevDeviceInput:
         """
         self.additional_exception = exception
 
-    def load_from_json(self, file_path, mapping_object):
+    def load_from_json(self, file_path: str, mapping_object) -> None:
+        """
+        Load all devices from json file
+        file structure:
+        {
+          "gamepads": {
+              "priority": X,
+              "keys": {
+                "KEY_NAME1": "mapping_name1",
+                "KEY_NAME2": "mapping_name2",
+              },
+              "joysticks": {
+                "J_NAME1": [
+                  "mapping_name",
+                  "action_type (ang_str for example)"
+                ],
+                "J_NAME2": [
+                  "mapping_name3",
+                  "action_type (ang_str for example)"
+                ]
+              }
+        }
+        :param file_path: path to file to be loaded
+        :param mapping_object: mapping object, with relation to which devices map their buttons
+        """
         f = open(file_path)
         data = json.load(f)
 
@@ -501,11 +573,6 @@ class EvdevDeviceInput:
                 self.add_device(new_device, gp_values['priority'])
 
 
-
-
-
-
-
 if __name__ == '__main__':
     from time import sleep
 
@@ -519,6 +586,7 @@ if __name__ == '__main__':
     class TestE(Exception):
         def __init__(self, message='TestException'):
             super().__init__(message)
+
 
     def y_exception():
         raise TestE()
