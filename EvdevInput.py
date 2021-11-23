@@ -519,7 +519,7 @@ class EvdevDeviceInput:
         """
         self.additional_exception = exception
 
-    def load_from_json(self, file_path: str, mapping_object) -> None:
+    def load_from_json(self, file_path: str, mapping_object, gamepad) -> None:
         """
         Load all devices from json file
         file structure:
@@ -553,24 +553,26 @@ class EvdevDeviceInput:
             pass
         else:
             for gp_name, gp_values in gp.items():
-                new_device = eval(gp_name)(mapping_object)
-                try:
-                    gp_keys = gp_values["keys"]
-                except KeyError:
-                    pass
-                else:
-                    for key_name, map_name in gp_keys.items():
-                        new_device.map_key(key_name, map_name)
+                if gp_name == gamepad.name:
+                    print(gp_name)
+                    new_device = gamepad
+                    try:
+                        gp_keys = gp_values["keys"]
+                    except KeyError:
+                        pass
+                    else:
+                        for key_name, map_name in gp_keys.items():
+                            new_device.map_key(key_name, map_name)
 
-                try:
-                    gp_j = gp_values["joysticks"]
-                except KeyError:
-                    pass
-                else:
-                    for j_name, map_name_v in gp_j.items():
-                        new_device.map_joystick(j_name, map_name_v[0], action_type=map_name_v[1])
+                    try:
+                        gp_j = gp_values["joysticks"]
+                    except KeyError:
+                        pass
+                    else:
+                        for j_name, map_name_v in gp_j.items():
+                            new_device.map_joystick(j_name, map_name_v[0], action_type=map_name_v[1])
 
-                self.add_device(new_device, gp_values['priority'])
+                    self.add_device(new_device, gp_values['priority'])
 
 
 if __name__ == '__main__':
