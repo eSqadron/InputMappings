@@ -156,7 +156,7 @@ class Joystick(EvdevInput):
 
         while abs(self.last_pos_xy[0]) > self.thresholds or abs(self.last_pos_xy[1]) > self.thresholds:
             # TODO - Zrobić whilea tak jakby tablicowo
-            x_j, y_j = self.last_pos_xy[0], -self.last_pos_xy[1]
+            x_j, y_j = self.last_pos_xy[0], self.last_pos_xy[1]
             self.mapping_to_execute.executeAction(x_j, y_j)
 
 
@@ -484,18 +484,19 @@ class EvdevDeviceInput:
         while padInputThread.is_alive():
             for executing_input in [self.executing_joystick, self.executing_button]:
                 if executing_input is not None:
-                    try:
-                        executing_input.execute_action()
-                    except ActionError as ae:
-                        if self.on_ActionError is None:
-                            pass
-                        else:
-                            self.on_ActionError(ae)
-                    except self.additional_exception as ae:
-                        if self.on_ActionError is None:
-                            pass
-                        else:
-                            self.on_ActionError(ae)
+                    if executing_input.execute_action is not None:
+                        try:
+                            executing_input.execute_action()
+                        except ActionError as ae:
+                            if self.on_ActionError is None:
+                                pass
+                            else:
+                                self.on_ActionError(ae)
+                        except self.additional_exception as ae:
+                            if self.on_ActionError is None:
+                                pass
+                            else:
+                                self.on_ActionError(ae)
 
             self.executing_joystick = None
             self.executing_button = None
