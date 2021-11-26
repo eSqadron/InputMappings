@@ -3,11 +3,11 @@ from typing import Optional, Callable, Dict
 
 from evdev import InputDevice, categorize, ecodes, KeyEvent, SynEvent, AbsEvent, list_devices, InputEvent
 
-from InputMappings.InputErrors import ActionError, DeviceNotPluggedError, NonExistingInputError
+from InputErrors import ActionError, DeviceNotPluggedError, NonExistingInputError
 from MappingClass import Mapping
 
 from numpy import rad2deg
-from math import atan2, sqrt
+from math import atan2, sqrt, cos
 
 
 class EvdevInput:
@@ -66,26 +66,33 @@ class Button(EvdevInput):
 
 
 class Joystick(EvdevInput):
-    def __init__(self, x_name, y_name, joystick_front_name, mapping_to_execute: Optional[Mapping] = None,
-                 thresholds=0.3, normalizer_div=1, normalizer_sub=0):
+    def __init__(self, x_name: str , y_name: str, joystick_front_name: str, invert_x: bool = False, invert_y = True,
+                 thresholds=0.3, normalizer_div=1, normalizer_sub=0, complex_solve = False):
         self.joystick_name = joystick_front_name
         self.name_xy = [x_name, y_name]
         self.last_pos_xy = [0, 0]
-        self.mapping_to_execute = mapping_to_execute
+        self.mapping_to_execute: Optional[Mapping] = None
+        
+        self.invert_x = invert_x
+        self.invert_y = invert_y
 
         self.thresholds = thresholds
         self.normalizer_div = normalizer_div
         self.normalizer_sub = normalizer_sub
+        
+        self.complex_solve = complex_solve
 
-        self.execute_action = (_ for _ in ()).throw(ActionError())
+        self.execute_action = lambda: (_ for _ in ()).throw(ActionError())
 
     def update_single_joystick(self, ev_name, ev_val):
         found = False
+        
+        axis_inversion = [self.invert_x, self.invert_y]
 
         for i in range(2):
             if self.name_xy[i] == ev_name:
-                # Turn pad range (ex. 0-256) into -1-1 range
-                self.last_pos_xy[i] = (ev_val - self.normalizer_sub) / self.normalizer_div
+                # Turn pad range (ex. 0-256) into -1 to 1 range and iverts axis id necessary
+                self.last_pos_xy[i] = (ev_val - self.normalizer_sub) / self.normalizer_div * (-1 if axis_inversion[i] else 1)
                 found = True
 
         if found:
@@ -103,10 +110,12 @@ class Joystick(EvdevInput):
         while abs(self.last_pos_xy[0]) > self.thresholds or abs(self.last_pos_xy[1]) > self.thresholds:
             # TODO - Zrobić whilea tak jakby tablicowo
 
-            x_j, y_j = self.last_pos_xy[0], -self.last_pos_xy[1]
+            x_j, y_j = self.last_pos_xy[0], self.last_pos_xy[1]
             # print(x_j, y_j, spec_arctan(x_j, y_j), sqrt(x_j ** 2 + y_j ** 2))
             # TODO - wywalić tego mina
-            self.mapping_to_execute.executeAction(rad2deg(atan2(x_j, y_j)), min(sqrt(x_j ** 2 + y_j ** 2), 1))
+            ang = atan2(x_j, y_j)
+            max_strength_multiplyer = (2 / ((1 - cos(ang)) * (sqrt(2) - 1) + 2)) if self.complex_solve else 1
+            self.mapping_to_execute.executeAction(rad2deg(ang), min(sqrt(x_j ** 2 + y_j ** 2) *  max_strength_multiplyer, 1))
 
     def execute_action_x_y(self) -> None:
         if self.mapping_to_execute is None:
@@ -278,7 +287,7 @@ class X5Pad(EvdevDevice):
         self.lef_j = Joystick("ABS_X", "ABS_Y", "LEFT_J", normalizer_div=128, normalizer_sub=128)
         self.right_j = Joystick("ABS_RZ", "ABS_Z", "RIGHT_J", normalizer_div=128, normalizer_sub=128)
 
-        self.b_triggers = Joystick("ABS_GAS", "ABS_BRAKE", "TRIGGERS", normalizer_div=255, normalizer_sub=0)
+        self.b_triggers = Joystick("ABS_GAS", "ABS_BRAKE", "TRIGGERS", normalizer_div=255, normalizer_sub=0, invert_y = False)
 
         self.cross_buttons = Joystick("ABS_HAT0X", "ABS_HAT0Y", "HAPPY_BUTTONS_J", normalizer_div=1, normalizer_sub=0)
         # To gówno działa jakoś dziwnie, trzeba dziada ogarnąć
@@ -324,7 +333,7 @@ class x360Pad(EvdevDevice):
         self.lef_j = Joystick("ABS_X", "ABS_Y", "LEFT_J", normalizer_div=32768, normalizer_sub=0)
         self.right_j = Joystick("ABS_RX", "ABS_RY", "RIGHT_J", normalizer_div=32768, normalizer_sub=0)
 
-        self.b_triggers = Joystick("ABS_Z", "ABS_RZ", "TRIGGERS", normalizer_div=255, normalizer_sub=0)
+        self.b_triggers = Joystick("ABS_RZ", "ABS_Z", "TRIGGERS", normalizer_div=255, normalizer_sub=0, invert_y = False)
 
         self.cross_buttons_j = Joystick("ABS_HAT0X", "ABS_HAT0Y", "CROSS_BUTTONS", normalizer_div=1, normalizer_sub=0)
         # To gówno działa jakoś dziwnie, trzeba dziada ogarnąć

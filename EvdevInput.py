@@ -3,9 +3,9 @@ import threading
 import time
 from typing import Optional, Dict, Callable, Type
 
-from InputMappings.EvdevInputDevices import Joystick, Button, EvdevDevice
-from InputMappings.InputErrors import PlaceholderException, DeviceNotPluggedError, NoDevicesAddedError, ActionError
-from InputMappings.MappingClass import MappingClass
+from EvdevInputDevices import Joystick, Button, EvdevDevice
+from InputErrors import PlaceholderException, DeviceNotPluggedError, NoDevicesAddedError, ActionError
+from MappingClass import MappingClass
 
 
 class EvdevDeviceInput:
@@ -178,7 +178,7 @@ class EvdevDeviceInput:
 
 if __name__ == '__main__':
     from time import sleep
-    from InputMappings.EvdevInputDevices import X5Pad
+    from EvdevInputDevices import x360Pad
 
 
     def x_sleep():
@@ -198,7 +198,7 @@ if __name__ == '__main__':
 
     mp = MappingClass()
 
-    pad = X5Pad(mp)
+    pad = x360Pad(mp)
 
     pi = EvdevDeviceInput()
 
