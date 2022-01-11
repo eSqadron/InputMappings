@@ -1,5 +1,5 @@
 # Input-mappings
-Overcomplicated library allowing for quick creations of maps function -> multiple input events.
+Overcomplicated library allowing for quick creations of maps function -> multiple input events, created for the purpose of Zebulon robot. Currently undergoing major refactor.
 
 ## Basic usage
 
