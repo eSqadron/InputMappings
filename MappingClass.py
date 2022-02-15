@@ -26,6 +26,7 @@ class Mapping:
             raise ValueError("function must be a callable")
 
     def executeAction(self, *argv):
+        print("exec")
         self._function(*argv)
 
 

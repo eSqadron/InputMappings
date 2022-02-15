@@ -4,7 +4,7 @@
 [('MSC_SCAN', 4)]
 """
 import threading
-from queue import Queue
+from queue import Queue, Empty
 
 from typing import Dict, List, Tuple
 import evdev as ev
@@ -41,30 +41,40 @@ class EvdevDeviceInput:
         while True:
             event = self.device.read_one()
             if event is not None:
-                ev_name_list = ev.ecodes.BTN[event.code]
+                #print(ev.categorize(event))
+                ev_name_list = ev.ecodes.keys[event.code]
                 if not isinstance(ev_name_list, List):
                     ev_name_list = [ev_name_list]
+                print(self.binds)                
                 for ev_name in ev_name_list:
+                    print(ev_name)
                     try:
                         if self.binds[ev_name][1] == event.value:
                             self.maps_to_execute_queue.put(self.binds[ev_name][0])
+                            print("   ", self.binds[ev_name][0], "pushed")
                     except KeyError:
-                        pass
+                        print("  key error")
 
     def run(self):
         padInputThread = threading.Thread(target=self.listen_and_push, args=())
         padInputThread.start()
 
-    def bind_EV_KEY(self, map_name, ev_key_name, ev_key_state=1):
+    def bind_EV_KEY(self, ev_key_name, map_name, ev_key_state=1):
+        print(map_name, self.related_mapping.standard_mappings.keys())
         if map_name in self.related_mapping.standard_mappings.keys():
             if ev_key_name in self.get_EV_KEYs():
                 self.binds[ev_key_name] = (self.related_mapping.standard_mappings[map_name], ev_key_state)
+            else:
+                print("d2")
+        else:
+            print("d1")
 
     def get_EV_KEYs(self, all_EV_KEYs: int = 1) -> List:
         if all_EV_KEYs:
-            t = list(ev.ecodes.KEY.values())
+            t = list(ev.ecodes.keys.values())
         else:
-            t = []  # TODO - tylko z podpiętych urządzeń
+            t = [i for i, j in self.device.capabilities(verbose=True)[('EV_KEY', 1)]]
+            # TODO - ze wszystkich podpiętych urządzeń
 
         full_list = []
         for sublist in t:
@@ -83,6 +93,8 @@ if __name__ == '__main__':
     mp = MappingClass()
 
     pi = EvdevDeviceInput(mp)
+    
+    print(pi.get_EV_KEYs(all_EV_KEYs=0))
 
 
     def x_sleep():
@@ -92,8 +104,11 @@ if __name__ == '__main__':
 
 
     mp.map_standard_action("test", x_sleep)
-    pi.bind_EV_KEY("BTN_X", "test")
+    pi.bind_EV_KEY("BTN_RIGHT", "test")
 
     pi.run()
     while True:
-        pi.maps_to_execute_queue.get().executeAction()
+        try:
+            pi.maps_to_execute_queue.get_nowait().executeAction()
+        except Empty:
+            pass
