@@ -28,8 +28,13 @@ class EvdevDeviceInput:
         for path in ev.list_devices():
             print(ev.InputDevice(path).name)
             if ev.InputDevice(path).name == "Xbox 360 Wireless Receiver":
-                print("connected")
+                print("   connected")
                 self.device = ev.InputDevice(path)
+                break
+        else:
+            if len(ev.list_devices()) != 0:
+                self.device = ev.InputDevice(ev.list_devices()[0])
+                print("   ", ev.InputDevice(ev.list_devices()[0]).name, " connected")
 
     def listen_and_push(self):
         # TODO - przerobić na każde urządzenie
@@ -78,6 +83,8 @@ if __name__ == '__main__':
     mp = MappingClass()
 
     pi = EvdevDeviceInput(mp)
+
+
     def x_sleep():
         print("sleep_start")
         sleep(15)
@@ -90,5 +97,3 @@ if __name__ == '__main__':
     pi.run()
     while True:
         pi.maps_to_execute_queue.get().executeAction()
-
-
