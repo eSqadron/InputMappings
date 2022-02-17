@@ -6,9 +6,10 @@
 import threading
 from queue import Queue, Empty
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Set
 import evdev as ev
 
+from InputErrors import ActionError
 from MappingClass import MappingClass, Mapping
 
 """
@@ -17,64 +18,95 @@ from MappingClass import MappingClass, Mapping
 
 
 class EvdevDeviceInput:
-    def __init__(self, related_mapping: MappingClass):
-        self.binds: Dict[str, Tuple[Mapping, int]] = {}
+    def __init__(self, related_mapping: MappingClass, mode="queued"):
+        self.binds: Dict[str, Tuple[str, int]] = {}
         self.related_mapping = related_mapping
 
         self.maps_to_execute_queue = Queue()
 
-        # TODO - przerobić na każde urządzenie
-        self.device = None
-        for path in ev.list_devices():
-            print(ev.InputDevice(path).name)
-            if ev.InputDevice(path).name == "Xbox 360 Wireless Receiver":
-                print("   connected")
-                self.device = ev.InputDevice(path)
-                break
-        else:
-            if len(ev.list_devices()) != 0:
-                self.device = ev.InputDevice(ev.list_devices()[0])
-                print("   ", ev.InputDevice(ev.list_devices()[0]).name, " connected")
+        self.pressed_buttons: Set[str] = set()
 
-    def listen_and_push(self):
-        # TODO - przerobić na każde urządzenie
+        self.mode = mode
+
+    def push_on_queue(self, key):
+        if self.mode == "queued":
+            self.maps_to_execute_queue.put(self.related_mapping.standard_mappings[key])
+        elif self.mode == "one_action_at_the_time":
+            if self.maps_to_execute_queue.empty():
+                self.maps_to_execute_queue.put(self.related_mapping.standard_mappings[key])
+
+    def listen_and_push(self) -> None:
+        """
+        Read actions from all devices and push them to self.maps_to_execute_queue FIFO queue
+        """
         while True:
-            event = self.device.read_one()
-            if event is not None:
-                #print(ev.categorize(event))
-                ev_name_list = ev.ecodes.keys[event.code]
-                if not isinstance(ev_name_list, List):
-                    ev_name_list = [ev_name_list]
-                print(self.binds)                
-                for ev_name in ev_name_list:
-                    print(ev_name)
-                    try:
-                        if self.binds[ev_name][1] == event.value:
-                            self.maps_to_execute_queue.put(self.binds[ev_name][0])
-                            print("   ", self.binds[ev_name][0], "pushed")
-                    except KeyError:
-                        print("  key error")
+            # Take care of already pushed buttons (action that happen in loop while button is held)
+            for button_name in self.pressed_buttons:
+                for key, value in self.binds:
+                    if button_name == value[0] and value[1] == 2:
+                        self.push_on_queue(key)
+
+            # Check for new pushed buttons (press or release) or other changed states (like moved joysticks)
+            for device in self.__get_plugged_devices_list():
+                event = device.read_one()
+                if event is not None:
+                    ev_name_list = ev.ecodes.keys[event.code]
+                    # list, because evdev defines some key/button names as one name and some as list of possible names
+                    # so we turn every name into list
+                    if not isinstance(ev_name_list, List):
+                        ev_name_list = [ev_name_list]
+                    # and iterate over it:
+                    for ev_name in ev_name_list:
+                        # for every name of a button clicked:
+                        for key, value in self.binds:
+                            # TODO - to się tyczy tylko przycisków, dodać joystick
+                            if value[0] == ev_name:
+                                # if this specific key (or joystick etc.) name is defined (we have action bound to it)
+                                if value[1] == event.value:
+                                    # if value is correct (mostly pressed or released)
+                                    # put proper mapping to queue to be executed
+                                    self.push_on_queue(key)
+
+                                # add currently pressed button to self.pressed_buttons (later it will help with hold
+                                # events)
+                                if event.value == 1:
+                                    self.pressed_buttons.add(ev_name)
+                                if event.value == 0:
+                                    if ev_name in self.pressed_buttons:
+                                        self.pressed_buttons.remove(ev_name)
+
+    def __get_plugged_devices_list(self) -> List[ev.device.InputDevice]:
+        """
+        List all plugged devices.
+        """
+        return [ev.InputDevice(path) for path in ev.list_devices()]
 
     def run(self):
-        padInputThread = threading.Thread(target=self.listen_and_push, args=())
+        """
+        Open another thread that will run self.listen_and_push function
+        """
+        padInputThread = threading.Thread(target=self.listen_and_push, args = ())
         padInputThread.start()
 
-    def bind_EV_KEY(self, ev_key_name, map_name, ev_key_state=1):
-        print(map_name, self.related_mapping.standard_mappings.keys())
+    def bind_EV_KEY(self, map_name, ev_key_name, ev_key_state=1):
+        """
+        bind specific actions names to (key_name, key_state) tuple
+        """
         if map_name in self.related_mapping.standard_mappings.keys():
             if ev_key_name in self.get_EV_KEYs():
-                self.binds[ev_key_name] = (self.related_mapping.standard_mappings[map_name], ev_key_state)
+                self.binds[map_name] = (ev_key_name, ev_key_state)
             else:
                 print("d2")
         else:
             print("d1")
 
-    def get_EV_KEYs(self, all_EV_KEYs: int = 1) -> List:
+    def get_EV_KEYs(self, all_EV_KEYs: bool = True) -> List[str]:
         if all_EV_KEYs:
             t = list(ev.ecodes.keys.values())
         else:
-            t = [i for i, j in self.device.capabilities(verbose=True)[('EV_KEY', 1)]]
-            # TODO - ze wszystkich podpiętych urządzeń
+            t = []
+            for device in self.__get_plugged_devices_list():
+                t.extend([i for i, j in device.capabilities(verbose=True)[('EV_KEY', 1)]])
 
         full_list = []
         for sublist in t:
@@ -92,9 +124,21 @@ if __name__ == '__main__':
 
     mp = MappingClass()
 
-    pi = EvdevDeviceInput(mp)
-    
-    print(pi.get_EV_KEYs(all_EV_KEYs=0))
+    pi = EvdevDeviceInput(mp, mode="one_action_at_the_time")
+
+    print(pi.get_EV_KEYs(all_EV_KEYs=False))
+
+
+    def x_start():
+        print("start")
+
+
+    def x_held():
+        print("holding")
+
+
+    def x_stop():
+        print("stopping")
 
 
     def x_sleep():
@@ -104,7 +148,13 @@ if __name__ == '__main__':
 
 
     mp.map_standard_action("test", x_sleep)
-    pi.bind_EV_KEY("BTN_RIGHT", "test")
+    mp.map_standard_action("test_start", x_start)
+    mp.map_standard_action("test_hold", x_held)
+    mp.map_standard_action("test_stop", x_stop)
+
+    pi.bind_EV_KEY("test_start", "BTN_RIGHT", 1)
+    pi.bind_EV_KEY("test_stop", "BTN_RIGHT", 0)
+    pi.bind_EV_KEY("test_hold", "BTN_RIGHT", 2)
 
     pi.run()
     while True:
