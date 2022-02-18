@@ -27,27 +27,32 @@ class EvdevDeviceInput:
         self.pressed_buttons: Set[str] = set()
 
         self.mode = mode
+        
+        self.executing = False
 
     def push_on_queue(self, key):
+        #print("test")
         if self.mode == "queued":
             self.maps_to_execute_queue.put(self.related_mapping.standard_mappings[key])
         elif self.mode == "one_action_at_the_time":
-            if self.maps_to_execute_queue.empty():
+            if self.maps_to_execute_queue.empty() and (not self.executing):
+                #print(key, " added")
                 self.maps_to_execute_queue.put(self.related_mapping.standard_mappings[key])
 
     def listen_and_push(self) -> None:
         """
         Read actions from all devices and push them to self.maps_to_execute_queue FIFO queue
         """
+        plugged_devices = self.__get_plugged_devices_list() # TODO - make list refreshable
         while True:
             # Take care of already pushed buttons (action that happen in loop while button is held)
             for button_name in self.pressed_buttons:
-                for key, value in self.binds:
+                for action_name, value in self.binds.items():
                     if button_name == value[0] and value[1] == 2:
-                        self.push_on_queue(key)
+                    
+                        self.push_on_queue(action_name)
 
             # Check for new pushed buttons (press or release) or other changed states (like moved joysticks)
-            plugged_devices = self.__get_plugged_devices_list() # TODO - make list refreshable
             for device in plugged_devices:
                 event = device.read_one()
                 if event is not None:
@@ -59,14 +64,14 @@ class EvdevDeviceInput:
                     # and iterate over it:
                     for ev_name in ev_name_list:
                         # for every name of a button clicked:
-                        for key, value in self.binds.items():
+                        for action_name, value in self.binds.items():
                             # TODO - to się tyczy tylko przycisków, dodać joystick
                             if value[0] == ev_name:
                                 # if this specific key (or joystick etc.) name is defined (we have action bound to it)
                                 if value[1] == event.value:
                                     # if value is correct (mostly pressed or released)
                                     # put proper mapping to queue to be executed
-                                    self.push_on_queue(key)
+                                    self.push_on_queue(action_name)
 
                                 # add currently pressed button to self.pressed_buttons (later it will help with hold
                                 # events)
@@ -132,14 +137,17 @@ if __name__ == '__main__':
 
     def x_start():
         print("start")
+        #pass
 
 
     def x_held():
         print("holding")
+        #pass
 
 
     def x_stop():
         print("stopping")
+        #pass
 
 
     def x_sleep():
@@ -161,7 +169,7 @@ if __name__ == '__main__':
 
     pi.run()
     while True:
-        try:
+        if not pi.maps_to_execute_queue.empty():
+            pi.executing = True
             pi.maps_to_execute_queue.get_nowait().executeAction()
-        except Empty:
-            pass
+            pi.executing = False
