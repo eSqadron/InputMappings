@@ -47,7 +47,8 @@ class EvdevDeviceInput:
                         self.push_on_queue(key)
 
             # Check for new pushed buttons (press or release) or other changed states (like moved joysticks)
-            for device in self.__get_plugged_devices_list():
+            plugged_devices = self.__get_plugged_devices_list() # TODO - make list refreshable
+            for device in plugged_devices:
                 event = device.read_one()
                 if event is not None:
                     ev_name_list = ev.ecodes.keys[event.code]
@@ -58,7 +59,7 @@ class EvdevDeviceInput:
                     # and iterate over it:
                     for ev_name in ev_name_list:
                         # for every name of a button clicked:
-                        for key, value in self.binds:
+                        for key, value in self.binds.items():
                             # TODO - to się tyczy tylko przycisków, dodać joystick
                             if value[0] == ev_name:
                                 # if this specific key (or joystick etc.) name is defined (we have action bound to it)
@@ -151,6 +152,8 @@ if __name__ == '__main__':
     mp.map_standard_action("test_start", x_start)
     mp.map_standard_action("test_hold", x_held)
     mp.map_standard_action("test_stop", x_stop)
+
+    pi.bind_EV_KEY("test", "BTN_LEFT", 1)
 
     pi.bind_EV_KEY("test_start", "BTN_RIGHT", 1)
     pi.bind_EV_KEY("test_stop", "BTN_RIGHT", 0)
