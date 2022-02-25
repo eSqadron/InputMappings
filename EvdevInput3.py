@@ -26,7 +26,9 @@ class EvdevDeviceInput:
         self.maps_to_execute_queue = Queue()
 
         self.pressed_buttons: Set[str] = set()
-        self.tilted_joysticks: Dict[str, int] = {}
+        self.tilted_joysticks: Dict[str, float] = {}
+
+        self.joystick_threshold = 0.3
 
         self.mode = mode
         self.executing = False
@@ -41,13 +43,17 @@ class EvdevDeviceInput:
 
     def push_abs_on_queue(self, action_name, x_value, y_value):
         mapping = self.related_mapping.standard_mappings[action_name]
-        # mapping.kwargs = {"x": x_value, "y": y_value}
-        # TODO - normalize x, y
         if self.mode == "queued":
             self.maps_to_execute_queue.put(lambda: mapping.executeAction(x=x_value, y=y_value))
         elif self.mode == "one_action_at_the_time":
             if self.maps_to_execute_queue.empty() and (not self.executing):
                 self.maps_to_execute_queue.put(lambda: mapping.executeAction(x=x_value, y=y_value))
+
+    def normalize_ABS(self, current_device: ev.device, x: int) -> float:
+        dev_info = current_device.AbsInfo
+        x_max = dev_info.max
+        x_min = dev_info.min
+        return (x - x_min)/(x_max - x_min) * 2 - 1
 
     def listen_and_push(self) -> None:
         """
@@ -69,7 +75,7 @@ class EvdevDeviceInput:
                 if value[1] in self.tilted_joysticks.keys():
                     y = self.tilted_joysticks[value[1]]
 
-                if x > 0 or y > 0:
+                if x > self.joystick_threshold or y > self.joystick_threshold:
                     self.push_abs_on_queue(action_name, x, y)
 
             # Check for new pushed buttons (press or release) or other changed states (like moved joysticks)
@@ -104,13 +110,14 @@ class EvdevDeviceInput:
                         #############################################
                         elif event.type == ev.ecodes.EV_ABS:  # if event is a joystick:
                             for action_name, value in self.joystick_binds.items():
+                                input_tilt = self.normalize_ABS(event, event.value)
                                 if value[0] == ev_name:
-                                    self.tilted_joysticks[value[0]] = event.value
+                                    self.tilted_joysticks[value[0]] = input_tilt
                                     self.push_abs_on_queue(action_name, self.tilted_joysticks[value[0]],
                                                            self.tilted_joysticks[value[1]])
                                     break
                                 elif value[1] == ev_name:
-                                    self.tilted_joysticks[value[1]] = event.value
+                                    self.tilted_joysticks[value[1]] = input_tilt
                                     self.push_abs_on_queue(action_name, self.tilted_joysticks[value[0]],
                                                            self.tilted_joysticks[value[1]])
                                     break
