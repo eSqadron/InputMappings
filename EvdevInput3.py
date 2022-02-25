@@ -50,9 +50,9 @@ class EvdevDeviceInput:
                 self.maps_to_execute_queue.put(lambda: mapping.executeAction(x=x_value, y=y_value))
 
     def normalize_ABS(self, current_device: ev.device, axis: str, x: int) -> float:
-        dev_infos = current_device.capabilities[('EV_ABS', 3)]
+        dev_infos = current_device.capabilities(verbose=True, absinfo=True)[('EV_ABS', 3)]
         for key, dev_info in dev_infos:
-            if key[0] == current_device:
+            if key[0] == axis:
                 break
         else:
             raise Exception("eeeee") # TODO - zrobić pwoażnego raisa
@@ -81,7 +81,7 @@ class EvdevDeviceInput:
                 if value[1] in self.tilted_joysticks.keys():
                     y = self.tilted_joysticks[value[1]]
 
-                if x > self.joystick_threshold or y > self.joystick_threshold:
+                if abs(x) > self.joystick_threshold or abs(y) > self.joystick_threshold:
                     self.push_abs_on_queue(action_name, x, y)
 
             # Check for new pushed buttons (press or release) or other changed states (like moved joysticks)
@@ -121,8 +121,9 @@ class EvdevDeviceInput:
                                         self.pressed_buttons.remove(ev_name)
                         #############################################
                         elif event.type == ev.ecodes.EV_ABS:  # if event is a joystick:
+                            #print(self.tilted_joysticks)
                             for action_name, value in self.joystick_binds.items():
-                                input_tilt = self.normalize_ABS(event, ev_name, event.value)
+                                input_tilt = self.normalize_ABS(device, ev_name, event.value)
                                 if value[0] == ev_name:
                                     self.tilted_joysticks[value[0]] = input_tilt
                                     if value[1] not in self.tilted_joysticks.keys():
@@ -226,6 +227,7 @@ if __name__ == '__main__':
 
     def j_test(x, y):
         print(x, y)
+        #pass
 
 
     mp.map_standard_action("test", x_sleep)
