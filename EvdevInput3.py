@@ -76,11 +76,19 @@ class EvdevDeviceInput:
             for device in plugged_devices:
                 event = device.read_one()
                 if event is not None:
-                    ev_name_list = ev.ecodes.keys[event.code]
-                    # list, because evdev defines some key/button names as one name and some as list of possible names
-                    # so we turn every name into list
-                    if not isinstance(ev_name_list, List):
-                        ev_name_list = [ev_name_list]
+                    ev_name_list = []
+                    ev_names = []
+                    if event.type == ev.ecodes.EV_KEY:
+                        ev_names = ev.ecodes.keys[event.code]
+                    elif event.type == ev.ecodes.EV_ABS:
+                        ev_names = ev.ecodes.ABS[event.code]
+                        
+                    if isinstance(ev_names, List):
+                        ev_name_list.extend(ev_names)
+                    else:
+                        ev_name_list.append(ev_names)    
+                    
+                    
                     # and iterate over it:
                     for ev_name in ev_name_list:
                         # for every name of a button clicked:
@@ -103,14 +111,23 @@ class EvdevDeviceInput:
                                         self.pressed_buttons.remove(ev_name)
                         #############################################
                         elif event.type == ev.ecodes.EV_ABS:  # if event is a joystick:
+                            print("joystick")
                             for action_name, value in self.joystick_binds.items():
+                                print(action_name, value, ev_name)
                                 if value[0] == ev_name:
+                                    print("found")
                                     self.tilted_joysticks[value[0]] = event.value
+                                    if value[1] not in self.tilted_joysticks.keys():
+                                        self.tilted_joysticks[value[1]] = 0
                                     self.push_abs_on_queue(action_name, self.tilted_joysticks[value[0]],
                                                            self.tilted_joysticks[value[1]])
                                     break
                                 elif value[1] == ev_name:
+                                    print("found")
                                     self.tilted_joysticks[value[1]] = event.value
+                                    if value[0] not in self.tilted_joysticks.keys():
+                                        self.tilted_joysticks[value[0]] = 0
+                                        
                                     self.push_abs_on_queue(action_name, self.tilted_joysticks[value[0]],
                                                            self.tilted_joysticks[value[1]])
                                     break
@@ -212,11 +229,11 @@ if __name__ == '__main__':
 
     mp.map_standard_action("j_test", j_test)
 
-    pi.bind_EV_KEY("test", "BTN_LEFT", 1)
+    pi.bind_EV_KEY("test", "BTN_Y", 1)
 
-    pi.bind_EV_KEY("test_start", "BTN_RIGHT", 1)
-    pi.bind_EV_KEY("test_stop", "BTN_RIGHT", 0)
-    pi.bind_EV_KEY("test_hold", "BTN_RIGHT", 2)
+    pi.bind_EV_KEY("test_start", "BTN_X", 1)
+    pi.bind_EV_KEY("test_stop", "BTN_X", 0)
+    pi.bind_EV_KEY("test_hold", "BTN_X", 2)
 
     pi.bind_double_EV_ABS("j_test", "ABS_X", "ABS_Y")
 
