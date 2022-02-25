@@ -82,12 +82,18 @@ class EvdevDeviceInput:
             for device in plugged_devices:
                 event = device.read_one()
                 if event is not None:
-                    ev_name_list = ev.ecodes.keys[event.code]
-                    # list, because evdev defines some key/button names as one name and some as list of possible names
-                    # so we turn every name into list
-                    if not isinstance(ev_name_list, List):
-                        ev_name_list = [ev_name_list]
-                    # and iterate over it:
+                    ev_name_list = []
+                    ev_names = []
+                    if event.type == ev.ecodes.EV_KEY:
+                        ev_names = ev.ecodes.keys[event.code]
+                    elif event.type == ev.ecodes.EV_ABS:
+                        ev_names = ev.ecodes.ABS[event.code]
+
+                    if isinstance(ev_names, List):
+                        ev_name_list.extend(ev_names)
+                    else:
+                        ev_name_list.append(ev_names)
+                        # and iterate over it:
                     for ev_name in ev_name_list:
                         # for every name of a button clicked:
                         ###############################################
@@ -113,11 +119,15 @@ class EvdevDeviceInput:
                                 input_tilt = self.normalize_ABS(event, event.value)
                                 if value[0] == ev_name:
                                     self.tilted_joysticks[value[0]] = input_tilt
+                                    if value[1] not in self.tilted_joysticks.keys():
+                                        self.tilted_joysticks[value[1]] = 0
                                     self.push_abs_on_queue(action_name, self.tilted_joysticks[value[0]],
                                                            self.tilted_joysticks[value[1]])
                                     break
                                 elif value[1] == ev_name:
                                     self.tilted_joysticks[value[1]] = input_tilt
+                                    if value[0] not in self.tilted_joysticks.keys():
+                                        self.tilted_joysticks[value[0]] = 0
                                     self.push_abs_on_queue(action_name, self.tilted_joysticks[value[0]],
                                                            self.tilted_joysticks[value[1]])
                                     break
