@@ -49,8 +49,14 @@ class EvdevDeviceInput:
             if self.maps_to_execute_queue.empty() and (not self.executing):
                 self.maps_to_execute_queue.put(lambda: mapping.executeAction(x=x_value, y=y_value))
 
-    def normalize_ABS(self, current_device: ev.device, x: int) -> float:
-        dev_info = current_device.AbsInfo
+    def normalize_ABS(self, current_device: ev.device, axis: str, x: int) -> float:
+        dev_infos = current_device.capabilities[('EV_ABS', 3)]
+        for key, dev_info in dev_infos:
+            if key[0] == current_device:
+                break
+        else:
+            raise Exception("eeeee") # TODO - zrobić pwoażnego raisa
+
         x_max = dev_info.max
         x_min = dev_info.min
         return (x - x_min)/(x_max - x_min) * 2 - 1
@@ -153,7 +159,7 @@ class EvdevDeviceInput:
             if ev_key_name in self.get_EV_KEYs():
                 self.button_binds[map_name] = (ev_key_name, ev_key_state)
             else:
-                print("d2")
+                print("d2") # TODO - zrobić pwoażnego raisa
         else:
             print("d1")
 
@@ -180,7 +186,7 @@ class EvdevDeviceInput:
             if ev_abs_x_name in self.get_EV_ABSs() and ev_abs_y_name in self.get_EV_ABSs():
                 self.joystick_binds[map_name] = (ev_abs_x_name, ev_abs_y_name)
             else:
-                print("d2")
+                print("d2") # TODO - zrobić pwoażnego raisa
         else:
             print("d1")
 
@@ -229,11 +235,11 @@ if __name__ == '__main__':
 
     mp.map_standard_action("j_test", j_test)
 
-    pi.bind_EV_KEY("test", "BTN_LEFT", 1)
+    pi.bind_EV_KEY("test", "BTN_Y", 1)
 
-    pi.bind_EV_KEY("test_start", "BTN_RIGHT", 1)
-    pi.bind_EV_KEY("test_stop", "BTN_RIGHT", 0)
-    pi.bind_EV_KEY("test_hold", "BTN_RIGHT", 2)
+    pi.bind_EV_KEY("test_start", "BTN_X", 1)
+    pi.bind_EV_KEY("test_stop", "BTN_X", 0)
+    pi.bind_EV_KEY("test_hold", "BTN_X", 2)
 
     pi.bind_double_EV_ABS("j_test", "ABS_X", "ABS_Y")
 
