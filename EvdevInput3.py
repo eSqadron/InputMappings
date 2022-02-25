@@ -122,7 +122,7 @@ class EvdevDeviceInput:
                         #############################################
                         elif event.type == ev.ecodes.EV_ABS:  # if event is a joystick:
                             for action_name, value in self.joystick_binds.items():
-                                input_tilt = self.normalize_ABS(event, event.value)
+                                input_tilt = self.normalize_ABS(event, ev_name, event.value)
                                 if value[0] == ev_name:
                                     self.tilted_joysticks[value[0]] = input_tilt
                                     if value[1] not in self.tilted_joysticks.keys():
