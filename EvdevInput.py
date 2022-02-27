@@ -1,184 +1,217 @@
-import json
 import threading
-import time
-from typing import Optional, Dict, Callable, Type
+from queue import Queue
 
-from EvdevInputDevices import Joystick, Button, EvdevDevice
-from InputErrors import PlaceholderException, DeviceNotPluggedError, NoDevicesAddedError, ActionError
+from typing import Dict, List, Tuple, Set
+import evdev as ev
+
 from MappingClass import MappingClass
 
 
+class EvdevDevicesError(Exception):
+    def __init__(self, message='Problem with Device!'):
+        super().__init__(message)
+
+
 class EvdevDeviceInput:
-    def __init__(self):
-        self.keyActionBindings = {}
+    def __init__(self, related_mapping: MappingClass, mode="queued"):
+        self.button_binds: Dict[str, Tuple[str, int]] = {}
+        self.joystick_binds: Dict[str, Tuple[str, str]] = {}
 
-        self.to_exec: Optional[MappingClass] = None
-        self.executing_joystick: Optional[Joystick] = None
-        self.executing_button: Optional[Button] = None
+        self.related_mapping = related_mapping
+        self.maps_to_execute_queue = Queue()
 
-        self.stopKeyName = "BTN_SELECT"  # TODO ogarnąć żeby to modyfikowalne było
+        self.pressed_buttons: Set[str] = set()
+        self.tilted_joysticks: Dict[str, float] = {}
 
-        # priority -> device
-        self.devices: Dict[int, EvdevDevice] = {}
+        self.joystick_threshold = 0.3
 
-        self.on_ActionError: Optional[Callable] = None
+        self.mode = mode
+        self.executing = False
 
-        self.additional_exception = PlaceholderException
+    def push_button_on_queue(self, action_name):
+        mapping = self.related_mapping.standard_mappings[action_name]
+        if self.mode == "queued":
+            self.maps_to_execute_queue.put(mapping.executeAction)
+        elif self.mode == "one_action_at_the_time":
+            if self.maps_to_execute_queue.empty() and (not self.executing):
+                self.maps_to_execute_queue.put(mapping.executeAction)
 
-    def add_device(self, device: EvdevDevice, priority: int, overwrite=False) -> None:
+    def push_abs_on_queue(self, action_name, x_value, y_value):
+        mapping = self.related_mapping.standard_mappings[action_name]
+        if self.mode == "queued":
+            self.maps_to_execute_queue.put(lambda: mapping.executeAction(x=x_value, y=y_value))
+        elif self.mode == "one_action_at_the_time":
+            if self.maps_to_execute_queue.empty() and (not self.executing):
+                self.maps_to_execute_queue.put(lambda: mapping.executeAction(x=x_value, y=y_value))
+
+    def normalize_ABS(self, current_device: ev.device, axis: str, x: int) -> float:
+        dev_infos = current_device.capabilities(verbose=True, absinfo=True)[('EV_ABS', 3)]
+        for key, dev_info in dev_infos:
+            if key[0] == axis:
+                break
+        else:
+            raise EvdevDevicesError(f"plugged devices don't have {axis} ABS event")
+
+        x_max = dev_info.max
+        x_min = dev_info.min
+        return (x - x_min)/(x_max - x_min) * 2 - 1
+
+    def listen_and_push(self) -> None:
         """
-        Add new device for it's input to be listened to
-        :param device: Instance of a child of EvdevDevice, device to be added
-        :param priority: connection priority; lower number - it will be the first for program to try to connect
-        :param overwrite: If device under given priority exist - overrite it
-        :return: None
+        Read actions from all devices and push them to self.maps_to_execute_queue FIFO queue
         """
-        if priority in self.devices and not overwrite:
-            raise IndexError("might be overriten!")
+        plugged_devices = self.__get_plugged_devices_list()  # TODO - make list refreshable
+        while True:
+            # Take care of already pushed buttons (action that happen in loop while button is held)
+            for button_name in self.pressed_buttons:
+                for action_name, value in self.button_binds.items():
+                    if button_name == value[0] and value[1] == 2:
+                        self.push_button_on_queue(action_name)
 
-        self.devices[priority] = device
+            for action_name, value in self.joystick_binds.items():
+                x = 0
+                y = 0
+                if value[0] in self.tilted_joysticks.keys():
+                    x = self.tilted_joysticks[value[0]]
+                if value[1] in self.tilted_joysticks.keys():
+                    y = self.tilted_joysticks[value[1]]
 
-    def connect_devices(self) -> None:
+                if abs(x) > self.joystick_threshold or abs(y) > self.joystick_threshold:
+                    self.push_abs_on_queue(action_name, x, y)
+
+            # Check for new pushed buttons (press or release) or other changed states (like moved joysticks)
+            for device in plugged_devices:
+                event = device.read_one()
+                if event is not None:
+                    ev_name_list = []
+                    ev_names = []
+                    if event.type == ev.ecodes.EV_KEY:
+                        ev_names = ev.ecodes.keys[event.code]
+                    elif event.type == ev.ecodes.EV_ABS:
+                        ev_names = ev.ecodes.ABS[event.code]
+
+                    if isinstance(ev_names, List):
+                        ev_name_list.extend(ev_names)
+                    else:
+                        ev_name_list.append(ev_names)
+                        # and iterate over it:
+                    for ev_name in ev_name_list:
+                        # for every name of a button clicked:
+                        ###############################################
+                        if event.type == ev.ecodes.EV_KEY:  # if event is a button/key:
+                            for action_name, value in self.button_binds.items():
+                                if value[0] == ev_name:
+                                    # if this specific key (or joystick etc.) name is defined (we have action bound
+                                    # to it)
+                                    if value[1] == event.value:
+                                        # if value is correct (mostly pressed or released)
+                                        # put proper mapping to queue to be executed
+                                        self.push_button_on_queue(action_name)
+                                # add currently pressed button to self.pressed_buttons (later it will help with hold
+                                # events)
+                                if event.value == 1:
+                                    self.pressed_buttons.add(ev_name)
+                                if event.value == 0:
+                                    if ev_name in self.pressed_buttons:
+                                        self.pressed_buttons.remove(ev_name)
+                        #############################################
+                        elif event.type == ev.ecodes.EV_ABS:  # if event is a joystick:
+                            for action_name, value in self.joystick_binds.items():
+                                input_tilt = self.normalize_ABS(device, ev_name, event.value)
+                                if value[0] == ev_name:
+                                    self.tilted_joysticks[value[0]] = input_tilt
+                                    if value[1] not in self.tilted_joysticks.keys():
+                                        self.tilted_joysticks[value[1]] = 0
+                                    self.push_abs_on_queue(action_name, self.tilted_joysticks[value[0]],
+                                                           self.tilted_joysticks[value[1]])
+                                    break
+                                elif value[1] == ev_name:
+                                    self.tilted_joysticks[value[1]] = input_tilt
+                                    if value[0] not in self.tilted_joysticks.keys():
+                                        self.tilted_joysticks[value[0]] = 0
+                                    self.push_abs_on_queue(action_name, self.tilted_joysticks[value[0]],
+                                                           self.tilted_joysticks[value[1]])
+                                    break
+
+    def __get_plugged_devices_list(self) -> List[ev.device.InputDevice]:
         """
-        Try to connect to all added devices, in ascending priority
-        :return: None
+        List all plugged devices.
         """
-        connected = False
-        for p, d in sorted(self.devices.items()):
-            for i in range(10):
-                try:
-                    d.connect()
-                except DeviceNotPluggedError:
-                    time.sleep(1)
-                    continue
-                else:
-                    print("device found")
-                    connected = True
-                    break
-            else:
-                print("couldn't find device!")
+        return [ev.InputDevice(path) for path in ev.list_devices()]
 
-        if not connected:
-            raise DeviceNotPluggedError()
-
-    def get_primary_device(self, only_connected: bool = True) -> EvdevDevice:
+    def run(self):
         """
-        Get current primary device (with highest priority (lowest number))
-        :param only_connected: search only connected devices (bool)
+        Open another thread that will run self.listen_and_push function
         """
-        if not only_connected:
-            return sorted(self.devices.items())[0][1]
-
-        for p, d in sorted(self.devices.items()):
-            if d.connected:
-                return d
-
-        raise NoDevicesAddedError()
-
-    def listen_and_execute_one_dev(self, device: Optional[EvdevDevice] = None) -> None:
-        if device is None:
-            device = self.get_primary_device()
-        padInputThread = threading.Thread(target=device.listen_loop, args=(self.stopKeyName, 0, self))
+        padInputThread = threading.Thread(target=self.listen_and_push, args=())
         padInputThread.start()
 
-        while padInputThread.is_alive():
-            for executing_input in [self.executing_joystick, self.executing_button]:
-                if executing_input is not None:
-                    #if executing_input.execute_action is not None:
-                    try:
-                        executing_input.execute_action()
-                    except ActionError as ae:
-                        if self.on_ActionError is None:
-                            pass
-                        else:
-                            self.on_ActionError(ae)
-                    except self.additional_exception as ae:
-                        if self.on_ActionError is None:
-                            pass
-                        else:
-                            self.on_ActionError(ae)
-
-            self.executing_joystick = None
-            self.executing_button = None
-
-    def listen_and_execute_all(self) -> None:
-        pass
-        # TODO - ogarnąć to
-
-    def set_ActionError_feedback(self, rapport_function: Callable[[Exception], None]) -> None:
+    def bind_EV_KEY(self, action_name, ev_key_name, ev_key_state=1):
         """
-        Set function that will rapport when button that is not mapped was pressed
-        :param rapport_function: function that gives user feedback about error (for example log or print of sorts)
+        bind specific actions names to (key_name, key_state) tuple
         """
-        self.on_ActionError = rapport_function
-
-    def set_additional_exception(self, exception: Type[Exception]) -> None:
-        """
-        During mapped function execution some additional exceptions might occur. If they derive from one class, you may
-        set up this parameter to catch them inside this loop.
-        :param exception: derivative of Exception, to be caught in the loop
-        """
-        self.additional_exception = exception
-
-    def load_from_json(self, file_path: str, mapping_object, gamepad) -> None:
-        """
-        Load all devices from json file
-        file structure:
-        {
-          "gamepads": {
-              "priority": X,
-              "keys": {
-                "KEY_NAME1": "mapping_name1",
-                "KEY_NAME2": "mapping_name2",
-              },
-              "joysticks": {
-                "J_NAME1": [
-                  "mapping_name",
-                  "action_type (ang_str for example)"
-                ],
-                "J_NAME2": [
-                  "mapping_name3",
-                  "action_type (ang_str for example)"
-                ]
-              }
-        }
-        :param file_path: path to file to be loaded
-        :param mapping_object: mapping object, with relation to which devices map their buttons
-        """
-        f = open(file_path)
-        data = json.load(f)
-
-        try:
-            gp = data["gamepads"]
-        except KeyError:
-            pass
+        if action_name in self.related_mapping.standard_mappings.keys():
+            if ev_key_name in self.get_EV_KEYs():
+                self.button_binds[action_name] = (ev_key_name, ev_key_state)
+            else:
+                EvdevDevicesError(f"Key {ev_key_name} doesn't exist!")
         else:
-            for gp_name, gp_values in gp.items():
-                if gp_name == gamepad.name:
-                    print(gp_name)
-                    new_device = gamepad
-                    try:
-                        gp_keys = gp_values["keys"]
-                    except KeyError:
-                        pass
-                    else:
-                        for key_name, map_name in gp_keys.items():
-                            new_device.map_key(key_name, map_name)
+            EvdevDevicesError(f"action {action_name} isn't mapped!")
 
-                    try:
-                        gp_j = gp_values["joysticks"]
-                    except KeyError:
-                        pass
-                    else:
-                        for j_name, map_name_v in gp_j.items():
-                            new_device.map_joystick(j_name, map_name_v[0], action_type=map_name_v[1])
+    def get_EV_KEYs(self, all_EV_KEYs: bool = True) -> List[str]:
+        if all_EV_KEYs:
+            t = list(ev.ecodes.keys.values())
+        else:
+            t = []
+            for device in self.__get_plugged_devices_list():
+                t.extend([i for i, j in device.capabilities(verbose=True)[('EV_KEY', 1)]])
 
-                    self.add_device(new_device, gp_values['priority'])
+        full_list = []
+        for sublist in t:
+            if isinstance(sublist, str):
+                full_list.append(sublist)
+            else:
+                for item in sublist:
+                    full_list.append(item)
+
+        return full_list
+
+    def bind_double_EV_ABS(self, action_name, ev_abs_x_name, ev_abs_y_name):
+        if action_name in self.related_mapping.standard_mappings.keys():
+            if ev_abs_x_name in self.get_EV_ABSs() and ev_abs_y_name in self.get_EV_ABSs():
+                self.joystick_binds[action_name] = (ev_abs_x_name, ev_abs_y_name)
+            else:
+                EvdevDevicesError(f"ABS axis {ev_abs_x_name} or {ev_abs_y_name} doesn't exist!")
+        else:
+            EvdevDevicesError(f"action {action_name} isn't mapped!")
+
+    def get_EV_ABSs(self):
+        return list(ev.ecodes.ABS.values())
 
 
 if __name__ == '__main__':
     from time import sleep
-    from EvdevInputDevices import x360Pad
+
+    mp = MappingClass()
+
+    pi = EvdevDeviceInput(mp, mode="one_action_at_the_time")
+
+    print(pi.get_EV_KEYs(all_EV_KEYs=False))
+
+
+    def x_start():
+        print("start")
+        # pass
+
+
+    def x_held():
+        print("holding")
+        # pass
+
+
+    def x_stop():
+        print("stopping")
+        # pass
 
 
     def x_sleep():
@@ -186,38 +219,30 @@ if __name__ == '__main__':
         sleep(15)
         print("sleep_stop")
 
+    def j_test(x, y):
+        print(x, y)
+        #pass
 
-    class TestE(Exception):
-        def __init__(self, message='TestException'):
-            super().__init__(message)
-
-
-    def y_exception():
-        raise TestE()
-
-
-    mp = MappingClass()
-
-    pad = x360Pad(mp)
-
-    pi = EvdevDeviceInput()
 
     mp.map_standard_action("test", x_sleep)
-    mp.map_standard_action("movement", lambda x, y: print(int(x), int(y * 100)))
-    mp.map_standard_action("up", y_exception)
-    mp.map_standard_action("down", lambda: print("test a"))
-    mp.map_standard_action("exit", lambda: print("exit"))
+    mp.map_standard_action("test_start", x_start)
+    mp.map_standard_action("test_hold", x_held)
+    mp.map_standard_action("test_stop", x_stop)
 
-    pad.map_joystick("LEFT_J", "movement", action_type="ang_str")
-    pad.map_key("BTN_Y", "up")
-    pad.map_key("BTN_A", "down")
-    pad.map_key("BTN_X", "test")
-    pad.map_key("BTN_SELECT", "exit")
+    mp.map_standard_action("j_test", j_test)
 
-    pi.set_ActionError_feedback(lambda x: print(x))
-    pi.set_additional_exception(TestE)
+    pi.bind_EV_KEY("test", "BTN_Y", 1)
 
-    pi.add_device(pad, 1)
-    pi.connect_devices()
+    pi.bind_EV_KEY("test_start", "BTN_X", 1)
+    pi.bind_EV_KEY("test_stop", "BTN_X", 0)
+    pi.bind_EV_KEY("test_hold", "BTN_X", 2)
 
-    pi.listen_and_execute_one_dev()
+    pi.bind_double_EV_ABS("j_test", "ABS_X", "ABS_Y")
+
+    pi.run()
+    while True:
+        if not pi.maps_to_execute_queue.empty():
+            pi.executing = True
+            fcn = pi.maps_to_execute_queue.get_nowait()
+            fcn()
+            pi.executing = False

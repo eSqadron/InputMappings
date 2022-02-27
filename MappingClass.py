@@ -9,6 +9,10 @@ def basicActionFunction(name):
 class Mapping:
     def __init__(self, name, function=None):
         self.name = name
+
+        self.kwargs = {}
+        self.args = []
+
         if function is None:
             self._function = basicActionFunction(name)
         else:
@@ -25,8 +29,8 @@ class Mapping:
         else:
             raise ValueError("function must be a callable")
 
-    def executeAction(self, *argv):
-        self._function(*argv)
+    def executeAction(self, *args, **kwargs):
+        self._function(*self.args, *args, **self.kwargs, **kwargs)
 
 
 class MappingClass:
