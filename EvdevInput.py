@@ -17,7 +17,7 @@ class EvdevDeviceInput:
         self.button_binds: Dict[str, Tuple[str, int]] = {}
         self.joystick_binds: Dict[str, Tuple[str, str]] = {}
 
-        self.related_mapping = related_mapping
+        self.related_mapping: MappingClass = related_mapping
         self.maps_to_execute_queue = Queue()
 
         self.pressed_buttons: Set[str] = set()
@@ -54,7 +54,7 @@ class EvdevDeviceInput:
 
         x_max = dev_info.max
         x_min = dev_info.min
-        return (x - x_min)/(x_max - x_min) * 2 - 1
+        return (x - x_min) / (x_max - x_min) * 2 - 1
 
     def listen_and_push(self) -> None:
         """
@@ -146,10 +146,15 @@ class EvdevDeviceInput:
         padInputThread = threading.Thread(target=self.listen_and_push, args=())
         padInputThread.start()
 
-    def bind_EV_KEY(self, action_name, ev_key_name, ev_key_state=1):
+    def bind_EV_KEY(self, action_name, ev_key_name, ev_key_state=1, args=None, kwargs=None):
         """
         bind specific actions names to (key_name, key_state) tuple
         """
+        if kwargs is None:
+            kwargs = {}
+        if args is None:
+            args = []
+
         if action_name in self.related_mapping.standard_mappings.keys():
             if ev_key_name in self.get_EV_KEYs():
                 self.button_binds[action_name] = (ev_key_name, ev_key_state)
@@ -176,7 +181,12 @@ class EvdevDeviceInput:
 
         return full_list
 
-    def bind_double_EV_ABS(self, action_name, ev_abs_x_name, ev_abs_y_name):
+    def bind_double_EV_ABS(self, action_name, ev_abs_x_name, ev_abs_y_name, args=None, kwargs=None):
+        if kwargs is None:
+            kwargs = {}
+        if args is None:
+            args = []
+
         if action_name in self.related_mapping.standard_mappings.keys():
             if ev_abs_x_name in self.get_EV_ABSs() and ev_abs_y_name in self.get_EV_ABSs():
                 self.joystick_binds[action_name] = (ev_abs_x_name, ev_abs_y_name)
@@ -219,9 +229,10 @@ if __name__ == '__main__':
         sleep(15)
         print("sleep_stop")
 
+
     def j_test(x, y):
         print(x, y)
-        #pass
+        # pass
 
 
     mp.map_standard_action("test", x_sleep)
