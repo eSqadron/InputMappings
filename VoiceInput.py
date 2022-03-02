@@ -83,7 +83,7 @@ class VoiceInput:
         # initialize variables for recording the speech
         self.FORMAT = pyaudio.paInt16
         self.CHANNELS = 1
-        self.RATE = 44100
+        self.RATE = 48000
 
         # initialize speech to text service
         self.authenticator = IAMAuthenticator(APIKEY)
@@ -94,6 +94,7 @@ class VoiceInput:
 
         self.stream = None
         self.audio = None
+        self.recognize_thread = Thread(target=self.recognize_using_weboscket, args=())
 
         # initlialize mapping
         self.mapping_object = mapping_object
@@ -149,32 +150,24 @@ class VoiceInput:
         # 1) otwieram stream z mikrofonu, co self.CHUNK ramek będzie się wywoływała funkcja self.pyaudio_callback.
         # Funkcja ta dodaje kolejny nagrany fragment do kolejki
         # TODO - jakiesz poszukiwanie mikrofonu
-        try:
-            self.stream = self.audio.open(
-                format=self.FORMAT,
-                channels=self.CHANNELS,
-                rate=self.RATE,
-                input=True,
-                frames_per_buffer=self.CHUNK,
-                stream_callback=self.pyaudio_callback,
-                start=False
-            )
-        except OSError:
-            self.RATE = 48000
-            self.stream = self.audio.open(
-                format=self.FORMAT,
-                channels=self.CHANNELS,
-                rate=self.RATE,
-                input=True,
-                frames_per_buffer=self.CHUNK,
-                stream_callback=self.pyaudio_callback,
-                start=False,
-                input_device_index=8
+
+        self.stream = self.audio.open(
+            format=self.FORMAT,
+            channels=32,
+            rate=self.RATE,
+            input=True,
+            frames_per_buffer=self.CHUNK,
+            stream_callback=self.pyaudio_callback,
+            start=False,
+            input_device_index=9
             )
 
         self.stream.start_stream()
+        self.recognize_thread.start()
+
 
     def checkAndExecute(self, transcript):
+        print("checkAndExecute")
         if not self.stop:
             # 7) w pierwszej kolejności sprawdza słowa "zupełnego" stopu, w tym momencie nie działa
             # ponieważ jakiekolwiek słowo klucz jest zupełnym stopem
@@ -185,6 +178,7 @@ class VoiceInput:
             # pojawiły się słowa klucze znajdujące się w tym słowniku. Jeżeli tak to wykonuje odpowiednią akcję i
             # wychodzi z rozpoznawania
             for i, v_c in self.voice_binds.items():
+                print(transcript)
                 if i in transcript:
                     self.action_to_execute = lambda: v_c.action_map.executeAction(v_c.args, v_c.kwargs)
                     self.stop = True
