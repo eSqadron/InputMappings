@@ -15,9 +15,6 @@ except ImportError:
     from queue import Queue, Full
 
 
-# '9l0KIfkApY6TbTOsrhP5g_TdI3V6d0_-qa66IEJyrOsd'
-# 'https://api.eu-de.speech-to-text.watson.cloud.ibm.com/instances/8206897f-1878-440b-b329-d9fa922e132e'
-
 # define callback for the speech to text service
 # TODO - zmergować tą klasę z klasą VoiceInput
 class MyRecognizeCallback(RecognizeCallback):
