@@ -7,7 +7,7 @@ from ibm_watson.websocket import RecognizeCallback, AudioSource
 from threading import Thread
 from ibm_cloud_sdk_core.authenticators import IAMAuthenticator
 
-from InputMappings.MappingClass import MappingClass, Mapping
+from MappingClass import MappingClass, Mapping
 
 try:
     from Queue import Queue, Full
@@ -153,18 +153,17 @@ class VoiceInput:
 
         self.stream = self.audio.open(
             format=self.FORMAT,
-            channels=32,
+            channels=1,
             rate=self.RATE,
             input=True,
             frames_per_buffer=self.CHUNK,
             stream_callback=self.pyaudio_callback,
             start=False,
-            input_device_index=9
-            )
+            input_device_index=1
+        )
 
         self.stream.start_stream()
         self.recognize_thread.start()
-
 
     def checkAndExecute(self, transcript):
         print("checkAndExecute")
@@ -180,7 +179,7 @@ class VoiceInput:
             for i, v_c in self.voice_binds.items():
                 print(transcript)
                 if i in transcript:
-                    self.action_to_execute = lambda: v_c.action_map.executeAction(v_c.args, v_c.kwargs)
+                    self.action_to_execute = lambda: v_c.action_map.executeAction(*v_c.args, **v_c.kwargs)
                     self.stop = True
 
     def bind_sentence(self, action_name: str, voice_inputs: List[str], args=None, kwargs=None):
@@ -190,38 +189,10 @@ class VoiceInput:
             kwargs = {}
 
         if action_name in self.mapping_object.standard_mappings.keys():
-            voice_bind = VoiceBind(action_name, voice_inputs, self.mapping_object.standard_mappings[action_name], *args,
-                                   **kwargs)
+            voice_bind = VoiceBind(action_name, voice_inputs, self.mapping_object.standard_mappings[action_name], args=args,
+                                   kwargs=kwargs)
             for i in voice_inputs:
                 self.voice_binds[i] = voice_bind
         else:
             raise IndexError(f"First map the action named {action_name}!")
 
-
-if __name__ == '__main__':
-    mappingObject = MappingClass()
-    mappingObject.map_standard_action("test", lambda: print("test"))
-    mappingObject.map_standard_action("movement", lambda x, y: print(f"move, {x}, {y}"))
-
-    voiceInput = VoiceInput(mappingObject, None, None)
-    voiceInput.bind_sentence(["test"], "test")
-    voiceInput.bind_sentence(["for word", "forward"], "movement", args=[0, 1])
-    # voiceInput.listenForVoiceInput()
-
-    # language_model = voiceInput.speech_to_text.create_language_model(
-    #     'First example language model',
-    #     'en-US_BroadbandModel',
-    #     description='First custom language model example'
-    # ).get_result()
-
-    # with open('corpus.txt', 'rb') as corpus_file:
-    #     voiceInput.speech_to_text.add_corpus(
-    #         '{customization_id}',
-    #         'corpus1',
-    #         corpus_file
-    #     )
-
-    # audio = pyaudio.PyAudio()
-    # for i in range(audio.get_device_count()):
-    #     print(audio.get_device_info_by_index(i))
-    # #print(int(audio.get_default_input_device_info()['defaultSampleRate']))
