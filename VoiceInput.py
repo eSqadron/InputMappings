@@ -91,7 +91,7 @@ class VoiceInput:
 
         self.stream = None
         self.audio = None
-        self.recognize_thread = Thread(target=self.recognize_using_weboscket, args=())
+        self.recognize_thread = None# = Thread(target=self.recognize_using_weboscket, args=())
 
         # initlialize mapping
         self.mapping_object = mapping_object
@@ -137,7 +137,7 @@ class VoiceInput:
         # instantiate pyaudio
         self.audio = pyaudio.PyAudio()
         try:
-            self.RATE = int(self.audio.get_default_input_device_info()['defaultSampleRate'])
+            self.RATE = int(self.audio.get_device_info_by_index(1)['defaultSampleRate'])
         except OSError:
             pass
 
@@ -160,6 +160,7 @@ class VoiceInput:
         )
 
         self.stream.start_stream()
+        self.recognize_thread = Thread(target=self.recognize_using_weboscket, args=())
         self.recognize_thread.start()
 
     def checkAndExecute(self, transcript):
@@ -174,9 +175,10 @@ class VoiceInput:
             # pojawiły się słowa klucze znajdujące się w tym słowniku. Jeżeli tak to wykonuje odpowiednią akcję i
             # wychodzi z rozpoznawania
             for i, v_c in self.voice_binds.items():
-                print(transcript)
+                #print(transcript)
                 if i in transcript:
-                    self.action_to_execute = lambda: v_c.action_map.executeAction(*v_c.args, **v_c.kwargs)
+                    #self.action_to_execute = lambda: v_c.action_map.executeAction(*v_c.args, **v_c.kwargs)
+                    self.action_to_execute = v_c.action_map.executeAction
                     self.stop = True
 
     def bind_sentence(self, action_name: str, voice_inputs: List[str], args=None, kwargs=None):
