@@ -27,40 +27,39 @@ class EvdevDeviceInput:
 
         self.mode = mode
         self.executing = False
-        
-        self.paused = False
-        self.waiting_lock = threading.RLock()
-        self.waiting_cond = threading.Condition(self.waiting_lock)
-       
-
-    def pause(self):
-        self.paused = True
-#         print("locking")
-        self.waiting_lock.acquire()
-#         print("locked")
-        while self.paused:
-            self.waiting_cond.wait()
-        self.waiting_lock.release()
-            
-    def resume(self):
-        self.paused = False
-        self.waiting_lock.acquire()
-        self.waiting_cond.notify_all()
-#         try:
-#             self.waiting_cond.notify_all()
-#         except RuntimeError:
-#             pass
-        self.waiting_lock.release()
-    
+#
+#         self.paused = False
+#         self.waiting_lock = threading.RLock()
+#         self.waiting_cond = threading.Condition(self.waiting_lock)
+#
+#
+#     def pause(self):
+#         self.paused = True
+# #         print("locking")
+#         self.waiting_lock.acquire()
+# #         print("locked")
+#         while self.paused:
+#             self.waiting_cond.wait()
+#         self.waiting_lock.release()
+#
+#     def resume(self):
+#         self.paused = False
+#         self.waiting_lock.acquire()
+#         self.waiting_cond.notify_all()
+# #         try:
+# #             self.waiting_cond.notify_all()
+# #         except RuntimeError:
+# #             pass
+#         self.waiting_lock.release()
+#
     
     def push_button_on_queue(self, action_name):
         mapping = self.related_mapping.standard_mappings[action_name]
         if self.mode == "queued":
             self.maps_to_execute_queue.put(mapping.executeAction)
         elif self.mode == "one_action_at_the_time":
-            if self.maps_to_execute_queue.empty() and (not self.executing) and (not self.paused):
+            if self.maps_to_execute_queue.empty() and (not self.executing):
                 self.maps_to_execute_queue.put(mapping.executeAction)
-        self.pause()
 
     def push_abs_on_queue(self, action_name, x_value, y_value):
         mapping = self.related_mapping.standard_mappings[action_name]
@@ -69,7 +68,6 @@ class EvdevDeviceInput:
         elif self.mode == "one_action_at_the_time":
             if self.maps_to_execute_queue.empty() and (not self.executing):
                 self.maps_to_execute_queue.put(lambda: mapping.executeAction(x=x_value, y=y_value))
-        self.pause()
 
     def normalize_ABS(self, current_device: ev.device, axis: str, x: int) -> float:
         dev_infos = current_device.capabilities(verbose=True, absinfo=True)[('EV_ABS', 3)]
@@ -134,7 +132,7 @@ class EvdevDeviceInput:
                                         # if value is correct (mostly pressed or released)
                                         # put proper mapping to queue to be executed
                                         self.push_button_on_queue(action_name)
-                                        
+
                                 # add currently pressed button to self.pressed_buttons (later it will help with hold
                                 # events)
                                 if event.value == 1:
@@ -152,16 +150,14 @@ class EvdevDeviceInput:
                                         self.tilted_joysticks[value[1]] = 0
                                     self.push_abs_on_queue(action_name, self.tilted_joysticks[value[0]],
                                                            self.tilted_joysticks[value[1]])
-                                    break
+                                    return
                                 elif value[1] == ev_name:
                                     self.tilted_joysticks[value[1]] = input_tilt
                                     if value[0] not in self.tilted_joysticks.keys():
                                         self.tilted_joysticks[value[0]] = 0
                                     self.push_abs_on_queue(action_name, self.tilted_joysticks[value[0]],
                                                            self.tilted_joysticks[value[1]])
-                                    break
-                        
-                    
+                                    return
 
     def __get_plugged_devices_list(self) -> List[ev.device.InputDevice]:
         """
