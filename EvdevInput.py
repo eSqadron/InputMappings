@@ -92,6 +92,7 @@ class EvdevDeviceInput:
                 for action_name, value in self.button_binds.items():
                     if button_name == value[0] and value[1] == 2:
                         self.push_button_on_queue(action_name)
+                        return
 
             for action_name, value in self.joystick_binds.items():
                 x = 0
@@ -103,6 +104,7 @@ class EvdevDeviceInput:
 
                 if abs(x) > self.joystick_threshold or abs(y) > self.joystick_threshold:
                     self.push_abs_on_queue(action_name, x, y)
+                    return
 
             # Check for new pushed buttons (press or release) or other changed states (like moved joysticks)
             for device in plugged_devices:
